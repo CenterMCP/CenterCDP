@@ -1,0 +1,278 @@
+package cdp
+
+import (
+	"context"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	logpkg "github.com/rvarun11/sqlite-mcp/internal/logger"
+)
+
+func setupService(t *testing.T) (*Service, *Manager) {
+	t.Helper()
+	dir := t.TempDir()
+	manager, err := NewManager(filepath.Join(dir, "registry.db"), filepath.Join(dir, "databases"), filepath.Join(dir, "default.db"), logpkg.NewTestLogger())
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	t.Cleanup(func() { _ = manager.Close() })
+	return NewService(manager, logpkg.NewTestLogger()), manager
+}
+
+func defineBasicSchema(t *testing.T, service *Service, databaseID string) {
+	t.Helper()
+	ctx := context.Background()
+	_, err := service.DefineContactAttribute(ctx, DefineContactAttributeInput{
+		DatabaseID: databaseID, AttributeKey: "country", DisplayName: "Country", Description: "Customer country code", DataType: "string", Filterable: true,
+	})
+	if err != nil {
+		t.Fatalf("DefineContactAttribute: %v", err)
+	}
+	_, err = service.DefineEvent(ctx, DefineEventInput{
+		DatabaseID: databaseID, EventKey: "purchase", DisplayName: "Purchase", Description: "Completed purchase",
+		Parameters: []EventParameterInput{{ParameterKey: "amount", DisplayName: "Amount", Description: "Purchase total", DataType: "number", Required: true, Filterable: true}},
+	})
+	if err != nil {
+		t.Fatalf("DefineEvent: %v", err)
+	}
+}
+
+func TestMultipleDatabasesAreIsolated(t *testing.T) {
+	service, manager := setupService(t)
+	ctx := context.Background()
+	brandA, err := manager.Create(ctx, "Brand A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	brandB, err := manager.Create(ctx, "Brand B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if brandA.ID == brandB.ID {
+		t.Fatal("database IDs must be unique")
+	}
+	defineBasicSchema(t, service, brandA.ID)
+	dictA, err := service.DataDictionary(ctx, brandA.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dictB, err := service.DataDictionary(ctx, brandB.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dictA["contact_attributes"].([]map[string]any)) != 1 {
+		t.Fatalf("brand A dictionary missing attribute: %#v", dictA)
+	}
+	if len(dictB["contact_attributes"].([]map[string]any)) != 0 {
+		t.Fatalf("brand B unexpectedly shares dictionary: %#v", dictB)
+	}
+}
+
+func TestPreviewSegmentsAcrossDatabasesPreservesOrigin(t *testing.T) {
+	service, manager := setupService(t)
+	ctx := context.Background()
+	targets := make([]SegmentTargetInput, 0, 2)
+	for _, name := range []string{"Brand A", "Brand B"} {
+		brand, err := manager.Create(ctx, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defineBasicSchema(t, service, brand.ID)
+		if _, err := service.UpsertContact(ctx, UpsertContactInput{DatabaseID: brand.ID, Identities: []IdentityInput{{Type: "email", Value: strings.ReplaceAll(strings.ToLower(name), " ", "") + "@example.com"}}, Attributes: map[string]any{"country": "TH"}}); err != nil {
+			t.Fatal(err)
+		}
+		segment, err := service.CreateSegment(ctx, CreateSegmentInput{DatabaseID: brand.ID, Name: "Thai contacts", Type: "rule", Rule: map[string]any{"field": "country", "operator": "equals", "value": "TH"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		targets = append(targets, SegmentTargetInput{DatabaseID: brand.ID, SegmentID: segment["segment_id"].(string)})
+	}
+	result := service.PreviewSegmentsAcrossDatabases(ctx, MultiDatabaseSegmentPreviewInput{Targets: targets})
+	if result["partial"].(bool) || result["total"].(int) != 2 {
+		t.Fatalf("unexpected multi-database preview: %#v", result)
+	}
+}
+
+func TestContactEventSegmentsAndCampaign(t *testing.T) {
+	service, _ := setupService(t)
+	ctx := context.Background()
+	defineBasicSchema(t, service, DefaultDatabaseID)
+
+	contact, err := service.UpsertContact(ctx, UpsertContactInput{
+		DatabaseID: DefaultDatabaseID,
+		Identities: []IdentityInput{{Type: "email", Value: "Alice@Example.com", IsPrimary: true}},
+		Attributes: map[string]any{"country": "TH"},
+		Consents:   map[string]bool{"email_marketing": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contact.Created {
+		t.Fatal("expected a newly created contact")
+	}
+	duplicate, err := service.UpsertContact(ctx, UpsertContactInput{
+		DatabaseID: DefaultDatabaseID,
+		Identities: []IdentityInput{{Type: "email", Value: "alice@example.com"}},
+		Attributes: map[string]any{"country": "TH"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate.ContactID != contact.ContactID || duplicate.Created {
+		t.Fatalf("identity resolution failed: %#v %#v", contact, duplicate)
+	}
+	loaded, err := service.GetContact(ctx, GetContactInput{DatabaseID: DefaultDatabaseID, ContactID: contact.ContactID})
+	if err != nil || loaded["contact_id"] != contact.ContactID {
+		t.Fatalf("get contact failed: %#v %v", loaded, err)
+	}
+	found, err := service.SearchContacts(ctx, SearchContactsInput{DatabaseID: DefaultDatabaseID, AttributeKey: "country", Value: "TH"})
+	if err != nil || len(found) != 1 {
+		t.Fatalf("search contacts failed: %#v %v", found, err)
+	}
+
+	if _, err := service.UpsertContact(ctx, UpsertContactInput{
+		DatabaseID: DefaultDatabaseID, ContactID: contact.ContactID, Attributes: map[string]any{"unknown": "value"},
+	}); err == nil {
+		t.Fatal("undefined contact attributes must be rejected")
+	}
+
+	event, err := service.TrackEvent(ctx, TrackEventInput{
+		DatabaseID: DefaultDatabaseID, ContactID: contact.ContactID, EventKey: "purchase",
+		Properties: map[string]any{"amount": 1250.5}, IdempotencyKey: "purchase-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event["duplicate"].(bool) {
+		t.Fatal("first event must not be a duplicate")
+	}
+	duplicateEvent, err := service.TrackEvent(ctx, TrackEventInput{
+		DatabaseID: DefaultDatabaseID, ContactID: contact.ContactID, EventKey: "purchase",
+		Properties: map[string]any{"amount": 1250.5}, IdempotencyKey: "purchase-1",
+	})
+	if err != nil || !duplicateEvent["duplicate"].(bool) {
+		t.Fatalf("idempotent event failed: %#v %v", duplicateEvent, err)
+	}
+
+	ruleSegment, err := service.CreateSegment(ctx, CreateSegmentInput{
+		DatabaseID: DefaultDatabaseID, Name: "Thai buyers", Type: "rule",
+		Rule: map[string]any{"all": []any{
+			map[string]any{"field": "contact.country", "operator": "equals", "value": "TH"},
+			map[string]any{"event": "purchase", "operator": "occurred"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	segmentID := ruleSegment["segment_id"].(string)
+	preview, err := service.PreviewSegment(ctx, PreviewSegmentInput{DatabaseID: DefaultDatabaseID, SegmentID: segmentID})
+	if err != nil || preview.Count != 1 {
+		t.Fatalf("rule segment preview = %#v, %v", preview, err)
+	}
+
+	sqlSegment, err := service.CreateSegment(ctx, CreateSegmentInput{
+		DatabaseID: DefaultDatabaseID, Name: "SQL Thai contacts", Type: "sql",
+		SQL:        `SELECT id AS contact_id FROM contacts WHERE json_extract(attributes_json, '$.country')=:country`,
+		Parameters: map[string]any{"country": "TH"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlPreview, err := service.PreviewSegment(ctx, PreviewSegmentInput{DatabaseID: DefaultDatabaseID, SegmentID: sqlSegment["segment_id"].(string)})
+	if err != nil || sqlPreview.Count != 1 {
+		t.Fatalf("SQL segment preview = %#v, %v", sqlPreview, err)
+	}
+
+	template, err := service.SaveTemplate(ctx, SaveTemplateInput{DatabaseID: DefaultDatabaseID, Name: "Offer", Channel: "email", Subject: "Hello", Body: "Offer", Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	campaign, err := service.CreateCampaign(ctx, CreateCampaignInput{DatabaseID: DefaultDatabaseID, Name: "Thai offer", SegmentID: segmentID, TemplateID: template["template_id"].(string)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	launched, err := service.LaunchCampaign(ctx, CampaignInput{DatabaseID: DefaultDatabaseID, CampaignID: campaign["campaign_id"].(string)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if launched["queued"].(int) != 1 || launched["suppressed"].(int) != 0 {
+		t.Fatalf("unexpected campaign launch: %#v", launched)
+	}
+}
+
+func TestJourneyStopsFollowupAfterPurchase(t *testing.T) {
+	service, manager := setupService(t)
+	ctx := context.Background()
+	defineBasicSchema(t, service, DefaultDatabaseID)
+	template, err := service.SaveTemplate(ctx, SaveTemplateInput{DatabaseID: DefaultDatabaseID, Name: "Welcome", Channel: "email", Subject: "Welcome", Body: "Hello", Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	templateID := template["template_id"].(string)
+	journey, err := service.CreateJourney(ctx, CreateJourneyInput{
+		DatabaseID: DefaultDatabaseID, Name: "Welcome journey", Timezone: "Asia/Bangkok",
+		Steps: []JourneyStepInput{
+			{Key: "start", Type: "trigger", Name: "New contact", Configuration: map[string]any{"type": "contact_created"}},
+			{Key: "welcome", Type: "action", Name: "Welcome", Configuration: map[string]any{"type": "send_message", "template_id": templateID, "message_type": "marketing"}},
+			{Key: "wait", Type: "delay", Name: "Wait", Configuration: map[string]any{"duration": 2.0, "unit": "days"}},
+			{Key: "purchased", Type: "condition", Name: "Purchased?", Configuration: map[string]any{"type": "event_occurred", "event_key": "purchase"}},
+			{Key: "followup", Type: "action", Name: "Follow up", Configuration: map[string]any{"type": "send_message", "template_id": templateID, "message_type": "marketing"}},
+			{Key: "done", Type: "end", Name: "Done"},
+		},
+		Transitions: []JourneyTransitionInput{
+			{From: "start", Outcome: "default", To: "welcome"},
+			{From: "welcome", Outcome: "default", To: "wait"},
+			{From: "wait", Outcome: "default", To: "purchased"},
+			{From: "purchased", Outcome: "matched", To: "done"},
+			{From: "purchased", Outcome: "not_matched", To: "followup"},
+			{From: "followup", Outcome: "default", To: "done"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.PublishJourney(ctx, JourneyInput{DatabaseID: DefaultDatabaseID, JourneyID: journey["journey_id"].(string)}); err != nil {
+		t.Fatal(err)
+	}
+	contact, err := service.UpsertContact(ctx, UpsertContactInput{
+		DatabaseID: DefaultDatabaseID, Identities: []IdentityInput{{Type: "email", Value: "journey@example.com"}},
+		Attributes: map[string]any{"country": "TH"}, Consents: map[string]bool{"email_marketing": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, _ := manager.Get(ctx, DefaultDatabaseID)
+	if err := service.processDueEnrollments(ctx, DefaultDatabaseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.processDueEnrollments(ctx, DefaultDatabaseID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.TrackEvent(ctx, TrackEventInput{DatabaseID: DefaultDatabaseID, ContactID: contact.ContactID, EventKey: "purchase", Properties: map[string]any{"amount": 100.0}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE journey_enrollments SET next_run_at=? WHERE contact_id=?`, nowUTC(), contact.ContactID); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.processDueEnrollments(ctx, DefaultDatabaseID); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.processDueEnrollments(ctx, DefaultDatabaseID); err != nil {
+		t.Fatal(err)
+	}
+	var messages int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM message_outbox WHERE contact_id=?`, contact.ContactID).Scan(&messages); err != nil {
+		t.Fatal(err)
+	}
+	if messages != 1 {
+		t.Fatalf("expected only welcome message after purchase, got %d", messages)
+	}
+	var status string
+	if err := db.QueryRow(`SELECT status FROM journey_enrollments WHERE contact_id=?`, contact.ContactID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "completed" {
+		t.Fatalf("journey status = %s, want completed", status)
+	}
+}
