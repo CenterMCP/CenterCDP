@@ -86,7 +86,7 @@ If `--data-dir` is omitted, managed customer databases are stored next to the de
 
 | Area | Tools |
 | --- | --- |
-| Databases | `create_customer_database`, `list_customer_databases` |
+| Databases | `create_customer_database`, `list_customer_databases`, `gen_demo_data`, `reset_demo_data` |
 | Data dictionary | `get_data_dictionary`, `define_contact_attribute`, `define_event` |
 | Contacts and events | `upsert_contact`, `get_contact`, `search_contacts`, `track_event` |
 | Segments | `create_segment`, `preview_segment`, `preview_segments_across_databases` |
@@ -96,6 +96,8 @@ If `--data-dir` is omitted, managed customer databases are stored next to the de
 Every CDP tool is explicitly scoped by `database_id`. The database supplied with `--database` is registered as `default`; databases created through `create_customer_database` receive their own ID and SQLite file.
 
 Contact attributes and event parameters must be defined before data is ingested. Supported data types are `string`, `integer`, `number`, `boolean`, `date`, `datetime`, `enum`, `object`, and `array`.
+
+`gen_demo_data` creates a deterministic sample dataset in the selected database, including dictionary entries, contacts, events, segments, templates, a completed campaign, and a draft journey. It first replaces any prior generated demo dataset, so repeated calls do not create duplicates. `reset_demo_data` deletes records in the reserved `demo_` ID/key namespace and leaves non-demo data intact. Both tools return per-table counts.
 
 ### SQLite administration
 

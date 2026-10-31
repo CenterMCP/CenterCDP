@@ -49,6 +49,22 @@ func (h *CDPHandler) ListDatabases(ctx context.Context, _ mcp.CallToolRequest) (
 	value, err := h.service.Manager().List(ctx)
 	return cdpResult(value, err)
 }
+func (h *CDPHandler) GenDemoData(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	in, err := decodeCDPInput[cdp.DatabaseScopedInput](request)
+	if err != nil {
+		return cdpResult(nil, err)
+	}
+	value, err := h.service.GenerateDemoData(ctx, in.DatabaseID)
+	return cdpResult(value, err)
+}
+func (h *CDPHandler) ResetDemoData(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	in, err := decodeCDPInput[cdp.DatabaseScopedInput](request)
+	if err != nil {
+		return cdpResult(nil, err)
+	}
+	value, err := h.service.ResetDemoData(ctx, in.DatabaseID)
+	return cdpResult(value, err)
+}
 func (h *CDPHandler) DataDictionary(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	in, err := decodeCDPInput[cdp.DatabaseScopedInput](request)
 	if err != nil {
@@ -199,6 +215,8 @@ func RegisterCDPTools(mcpServer *server.MCPServer, h *CDPHandler) {
 	}
 	register("create_customer_database", "Create an isolated customer database for a business or brand.", false, false, false, mcp.NewTool("create_customer_database", mcp.WithInputSchema[cdp.DatabaseInput]()), h.CreateDatabase)
 	register("list_customer_databases", "List available customer databases. Use database_id explicitly in every CDP operation.", true, false, true, mcp.NewTool("list_customer_databases"), h.ListDatabases)
+	register("gen_demo_data", "Replace the reserved demo_ namespace with a complete sample CDP dataset. Existing non-demo data is preserved.", false, true, true, mcp.NewTool("gen_demo_data", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.GenDemoData)
+	register("reset_demo_data", "Delete all records in the reserved demo_ namespace while preserving non-demo data.", false, true, true, mcp.NewTool("reset_demo_data", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.ResetDemoData)
 	register("get_data_dictionary", "Return contact attributes, events, and event parameters defined for a customer database.", true, false, true, mcp.NewTool("get_data_dictionary", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.DataDictionary)
 	register("define_contact_attribute", "Create or version a typed contact attribute definition before ingesting that field.", false, false, true, mcp.NewTool("define_contact_attribute", mcp.WithInputSchema[cdp.DefineContactAttributeInput]()), h.DefineContactAttribute)
 	register("define_event", "Create or version an event definition and its typed parameters.", false, false, true, mcp.NewTool("define_event", mcp.WithInputSchema[cdp.DefineEventInput]()), h.DefineEvent)

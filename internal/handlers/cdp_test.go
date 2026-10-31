@@ -12,7 +12,7 @@ func TestRegisterCDPTools(t *testing.T) {
 	RegisterCDPTools(mcpServer, NewCDPHandler(nil))
 	tools := mcpServer.ListTools()
 	for _, name := range []string{
-		"create_customer_database", "list_customer_databases", "get_data_dictionary",
+		"create_customer_database", "list_customer_databases", "gen_demo_data", "reset_demo_data", "get_data_dictionary",
 		"define_contact_attribute", "define_event", "upsert_contact", "get_contact", "search_contacts", "track_event",
 		"create_segment", "preview_segment", "preview_segments_across_databases",
 		"save_message_template", "create_campaign", "launch_campaign", "create_journey",

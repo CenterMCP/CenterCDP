@@ -201,6 +201,104 @@ func TestContactEventSegmentsAndCampaign(t *testing.T) {
 	}
 }
 
+func TestGenerateAndResetDemoData(t *testing.T) {
+	service, manager := setupService(t)
+	ctx := context.Background()
+	defineBasicSchema(t, service, DefaultDatabaseID)
+	userContact, err := service.UpsertContact(ctx, UpsertContactInput{
+		DatabaseID: DefaultDatabaseID,
+		Identities: []IdentityInput{{Type: "email", Value: "user@example.com", IsPrimary: true}},
+		Attributes: map[string]any{"country": "TH"},
+		Consents:   map[string]bool{"email_marketing": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	generated, err := service.GenerateDemoData(ctx, DefaultDatabaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := generated["created"].(map[string]int64)
+	if created["contacts"] != 6 || created["events"] != 10 || created["segments"] != 2 {
+		t.Fatalf("unexpected generated counts: %#v", created)
+	}
+
+	db, err := manager.Get(ctx, DefaultDatabaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertCount := func(query string, want int) {
+		t.Helper()
+		var got int
+		if err := db.QueryRowContext(ctx, query).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("count for %q = %d, want %d", query, got, want)
+		}
+	}
+	assertCount(`SELECT COUNT(*) FROM contacts WHERE id GLOB 'demo_*'`, 6)
+	assertCount(`SELECT COUNT(*) FROM events WHERE id GLOB 'demo_*'`, 10)
+	assertCount(`SELECT COUNT(*) FROM message_outbox WHERE id GLOB 'demo_*' AND status='sent'`, 3)
+
+	thai, err := service.PreviewSegment(ctx, PreviewSegmentInput{DatabaseID: DefaultDatabaseID, SegmentID: "demo_segment_thailand"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if thai.Count != 4 {
+		t.Fatalf("Thailand demo segment count = %d, want 4", thai.Count)
+	}
+	highValue, err := service.PreviewSegment(ctx, PreviewSegmentInput{DatabaseID: DefaultDatabaseID, SegmentID: "demo_segment_high_value"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if highValue.Count != 3 {
+		t.Fatalf("high-value demo segment count = %d, want 3", highValue.Count)
+	}
+
+	generatedAgain, err := service.GenerateDemoData(ctx, DefaultDatabaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaced := generatedAgain["replaced_existing"].(map[string]int64)
+	if replaced["contacts"] != 6 {
+		t.Fatalf("second generation did not replace six contacts: %#v", replaced)
+	}
+	assertCount(`SELECT COUNT(*) FROM contacts WHERE id GLOB 'demo_*'`, 6)
+
+	reset, err := service.ResetDemoData(ctx, DefaultDatabaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reset["total_deleted"].(int64) == 0 {
+		t.Fatalf("reset deleted no rows: %#v", reset)
+	}
+	for _, table := range []string{
+		"contact_attribute_definitions", "event_definitions", "event_parameter_definitions", "contacts", "contact_identities",
+		"events", "segments", "segment_memberships", "message_templates", "campaigns", "campaign_audience", "message_outbox",
+		"journeys", "journey_versions", "journey_steps", "journey_transitions", "audit_log",
+	} {
+		assertCount(`SELECT COUNT(*) FROM `+table+` WHERE `+demoIDColumn(table)+` GLOB 'demo_*'`, 0)
+	}
+	if _, err := service.GetContact(ctx, GetContactInput{DatabaseID: DefaultDatabaseID, ContactID: userContact.ContactID}); err != nil {
+		t.Fatalf("reset removed the non-demo contact: %v", err)
+	}
+	assertCount(`SELECT COUNT(*) FROM contact_attribute_definitions WHERE attribute_key='country'`, 1)
+	assertCount(`SELECT COUNT(*) FROM event_definitions WHERE event_key='purchase'`, 1)
+}
+
+func demoIDColumn(table string) string {
+	switch table {
+	case "segment_memberships":
+		return "segment_id"
+	case "campaign_audience":
+		return "campaign_id"
+	default:
+		return "id"
+	}
+}
+
 func TestJourneyStopsFollowupAfterPurchase(t *testing.T) {
 	service, manager := setupService(t)
 	ctx := context.Background()
