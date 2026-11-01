@@ -96,7 +96,7 @@ If `--data-dir` is omitted, managed customer databases are stored next to the de
 
 Every CDP tool is explicitly scoped by `database_id`. The database supplied with `--database` is registered as `default`; databases created through `create_customer_database` receive their own ID and SQLite file.
 
-Collection tools return structured data and are bound to a shared MCP Apps table resource. Compatible clients therefore render contacts, segments, templates, campaigns, journeys, databases, and outbox messages as deterministic tables instead of asking the model to choose a presentation. Paginated list tools accept `page` and `page_size` (20 rows by default, 100 maximum), and the table provides Previous/Next controls.
+Collection tools return structured data and are bound to a shared MCP Apps table resource. Compatible clients therefore render contacts, contact searches, segments, templates, campaigns, journeys, databases, and outbox messages as deterministic tables instead of asking the model to choose a presentation. Paginated list tools accept `page` and `page_size` (20 rows by default, 100 maximum). Each response exposes at most three pages to the model. Previous/Next navigation stays inside that local buffer and loads the adjacent three-page block only when the user crosses a buffer boundary.
 
 `get_code_version` reports the semantic feature version, the exact Git revision embedded by the Go toolchain, and a `modified` flag for builds made from uncommitted changes. The semantic version lives in `internal/appversion/version.go`; bump its minor component for every feature and its patch component for fixes.
 

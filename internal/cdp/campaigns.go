@@ -152,17 +152,17 @@ func (s *Service) ListOutbox(ctx context.Context, in OutboxListInput) (*PageResu
 	if pageSize == 0 && in.Limit > 0 {
 		pageSize = in.Limit
 	}
-	page, pageSize, offset := normalizePage(in.Page, pageSize)
 	where, args := statusWhere(in.Status)
 	total, err := countQuery(ctx, db, `SELECT COUNT(*) FROM message_outbox`+where, args...)
 	if err != nil {
 		return nil, err
 	}
-	queryArgs := append(args, pageSize, offset)
+	window := newPaginationWindow(in.Page, pageSize, total)
+	queryArgs := append(args, window.limit, window.offset)
 	rows, err := queryMaps(ctx, db, `SELECT id,contact_id,campaign_id,channel,template_id,recipient,status,scheduled_at,attempt,last_error
 		FROM message_outbox`+where+` ORDER BY created_at DESC,id LIMIT ? OFFSET ?`, queryArgs...)
 	if err != nil {
 		return nil, err
 	}
-	return pageResult(rows, page, pageSize, total), nil
+	return pageResult(rows, window), nil
 }

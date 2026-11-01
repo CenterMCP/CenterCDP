@@ -127,7 +127,7 @@ func TestContactEventSegmentsAndCampaign(t *testing.T) {
 		t.Fatalf("get contact failed: %#v %v", loaded, err)
 	}
 	found, err := service.SearchContacts(ctx, SearchContactsInput{DatabaseID: DefaultDatabaseID, AttributeKey: "country", Value: "TH"})
-	if err != nil || len(found) != 1 {
+	if err != nil || found.Total != 1 || len(found.Rows) != 1 {
 		t.Fatalf("search contacts failed: %#v %v", found, err)
 	}
 
@@ -299,7 +299,7 @@ func TestCollectionListsArePaginated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if contacts.Total != 300 || contacts.TotalPages != 150 || contacts.Page != 2 || len(contacts.Rows) != 2 {
+	if contacts.Total != 300 || contacts.TotalPages != 150 || contacts.Page != 2 || len(contacts.Rows) != 6 || contacts.BufferStartPage != 1 || contacts.BufferEndPage != 3 {
 		t.Fatalf("unexpected contacts page: %#v", contacts)
 	}
 	if _, ok := contacts.Rows[0]["attributes"].(map[string]any); !ok {
@@ -307,7 +307,7 @@ func TestCollectionListsArePaginated(t *testing.T) {
 	}
 
 	segments, err := service.ListSegments(ctx, StatusPageInput{DatabaseID: DefaultDatabaseID, Status: "validated", PageSize: 1})
-	if err != nil || segments.Total != 2 || len(segments.Rows) != 1 {
+	if err != nil || segments.Total != 2 || len(segments.Rows) != 2 || segments.BufferEndPage != 2 {
 		t.Fatalf("unexpected segments page: %#v, %v", segments, err)
 	}
 	campaigns, err := service.ListCampaigns(ctx, StatusPageInput{DatabaseID: DefaultDatabaseID, Status: "completed"})
@@ -323,8 +323,19 @@ func TestCollectionListsArePaginated(t *testing.T) {
 		t.Fatalf("unexpected journeys page: %#v, %v", journeys, err)
 	}
 	outbox, err := service.ListOutbox(ctx, OutboxListInput{DatabaseID: DefaultDatabaseID, Status: "sent", PageSize: 2})
-	if err != nil || outbox.Total != 121 || len(outbox.Rows) != 2 || outbox.TotalPages != 61 {
+	if err != nil || outbox.Total != 121 || len(outbox.Rows) != 6 || outbox.TotalPages != 61 || outbox.BufferEndPage != 3 {
 		t.Fatalf("unexpected outbox page: %#v, %v", outbox, err)
+	}
+
+	nextBuffer, err := service.ListContacts(ctx, PageInput{DatabaseID: DefaultDatabaseID, Page: 4, PageSize: 20})
+	if err != nil || len(nextBuffer.Rows) != 60 || nextBuffer.BufferStartPage != 4 || nextBuffer.BufferEndPage != 6 {
+		t.Fatalf("unexpected next contacts buffer: %#v, %v", nextBuffer, err)
+	}
+	thaiContacts, err := service.SearchContacts(ctx, SearchContactsInput{
+		DatabaseID: DefaultDatabaseID, AttributeKey: "demo_country", Value: "TH", Page: 1, PageSize: 20,
+	})
+	if err != nil || thaiContacts.Total != 150 || len(thaiContacts.Rows) != 60 || thaiContacts.BufferEndPage != 3 {
+		t.Fatalf("unexpected contact search buffer: %#v, %v", thaiContacts, err)
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 	"github.com/rvarun11/sqlite-mcp/internal/cdp"
 )
 
-const tableResourceURI = "ui://centercdp/table/v1.html"
+const tableResourceURI = "ui://centercdp/table/v2.html"
 const tableMIMEType = "text/html;profile=mcp-app"
 
 type tableColumn struct {
@@ -20,12 +20,14 @@ type tableColumn struct {
 }
 
 type tablePagination struct {
-	Page       int            `json:"page"`
-	PageSize   int            `json:"page_size"`
-	Total      int            `json:"total"`
-	TotalPages int            `json:"total_pages"`
-	Tool       string         `json:"tool,omitempty"`
-	Arguments  map[string]any `json:"arguments,omitempty"`
+	Page            int            `json:"page"`
+	PageSize        int            `json:"page_size"`
+	Total           int            `json:"total"`
+	TotalPages      int            `json:"total_pages"`
+	BufferStartPage int            `json:"buffer_start_page"`
+	BufferEndPage   int            `json:"buffer_end_page"`
+	Tool            string         `json:"tool,omitempty"`
+	Arguments       map[string]any `json:"arguments,omitempty"`
 }
 
 type tableView struct {
@@ -81,6 +83,7 @@ func newPagedTable(title, entity, tool string, columns []tableColumn, page *cdp.
 		Rows:    page.Rows,
 		Pagination: tablePagination{
 			Page: page.Page, PageSize: page.PageSize, Total: page.Total, TotalPages: page.TotalPages,
+			BufferStartPage: page.BufferStartPage, BufferEndPage: page.BufferEndPage,
 			Tool: tool, Arguments: arguments,
 		},
 	}
@@ -151,15 +154,15 @@ function valueAt(row,key){if(row==null)return null;if(Object.prototype.hasOwnPro
 function display(value){if(value===null||value===undefined||value==="")return "—";if(typeof value==="boolean")return value?"Yes":"No";if(typeof value==="object"){try{return JSON.stringify(value)}catch{return String(value)}}return String(value);}
 function el(name,className,text){const node=document.createElement(name);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node;}
 function render(data){current=data;if(!data||data.view!=="table"){app.replaceChildren(el("div","error","This result cannot be displayed as a table."));return;}
- const rows=Array.isArray(data.rows)?data.rows:[];const p=data.pagination||{};let columns=Array.isArray(data.columns)?data.columns:[];
- if(!columns.length&&rows[0])columns=Object.keys(rows[0]).map(key=>({key,label:key}));
- const heading=el("div","heading");heading.append(el("h2","",data.title||"Results"),el("div","count",String(p.total??rows.length)+" total"));
+ const allRows=Array.isArray(data.rows)?data.rows:[];const p=data.pagination||{};const page=p.page||1;const pageSize=p.page_size||Math.max(allRows.length,1);const bufferStart=p.buffer_start_page||page;const bufferEnd=p.buffer_end_page||page;const localOffset=Math.max(0,(page-bufferStart)*pageSize);const rows=allRows.slice(localOffset,localOffset+pageSize);let columns=Array.isArray(data.columns)?data.columns:[];
+ if(!columns.length&&allRows[0])columns=Object.keys(allRows[0]).map(key=>({key,label:key}));
+ const heading=el("div","heading");heading.append(el("h2","",data.title||"Results"),el("div","count",String(p.total??allRows.length)+" total"));
  const wrap=el("div","table-wrap");if(!rows.length){wrap.append(el("div","empty","No results found."));}else{const table=el("table");const thead=el("thead");const header=el("tr");for(const col of columns)header.append(el("th","",col.label||col.key));thead.append(header);table.append(thead);const tbody=el("tbody");for(const row of rows){const tr=el("tr");for(const col of columns){const text=display(valueAt(row,col.key));const td=el("td","",text);td.title=text;tr.append(td);}tbody.append(tr);}table.append(tbody);wrap.append(table);}
- const page=p.page||1,totalPages=p.total_pages||0,start=rows.length?(page-1)*(p.page_size||rows.length)+1:0,end=rows.length?start+rows.length-1:0;
- const footer=el("div","footer");footer.append(el("div","",rows.length?"Rows "+start+"–"+end+" of "+String(p.total??rows.length):"0 rows"));const buttons=el("div","buttons");
- const previous=el("button","","Previous"),next=el("button","","Next");previous.disabled=page<=1||!p.tool;next.disabled=!p.tool||totalPages===0||page>=totalPages;previous.onclick=()=>changePage(page-1,previous);next.onclick=()=>changePage(page+1,next);buttons.append(previous,el("span","","Page "+page+" of "+Math.max(totalPages,1)),next);footer.append(buttons);app.replaceChildren(heading,wrap,footer);
+ const totalPages=p.total_pages||0,start=rows.length?(page-1)*pageSize+1:0,end=rows.length?Math.min(start+rows.length-1,p.total??start+rows.length-1):0;
+ const footer=el("div","footer");const bufferLabel=totalPages>1?" • buffered pages "+bufferStart+"–"+bufferEnd:"";footer.append(el("div","",rows.length?"Rows "+start+"–"+end+" of "+String(p.total??allRows.length)+bufferLabel:"0 rows"));const buttons=el("div","buttons");
+ const previous=el("button","","Previous"),next=el("button","","Next");previous.disabled=page<=1;next.disabled=totalPages===0||page>=totalPages;previous.onclick=()=>changePage(page-1,previous);next.onclick=()=>changePage(page+1,next);buttons.append(previous,el("span","","Page "+page+" of "+Math.max(totalPages,1)),next);footer.append(buttons);app.replaceChildren(heading,wrap,footer);
 }
-async function changePage(page,button){if(!current?.pagination?.tool)return;button.disabled=true;app.classList.add("loading");try{const p=current.pagination;const args={...(p.arguments||{}),page,page_size:p.page_size};const result=await request("tools/call",{name:p.tool,arguments:args});if(result?.structuredContent)render(result.structuredContent);else throw new Error("The server returned no table data.");}catch(error){app.replaceChildren(el("div","error",error?.message||"Could not load this page."));}finally{app.classList.remove("loading");}}
+async function changePage(page,button){const p=current?.pagination;if(!p)return;if(page>=p.buffer_start_page&&page<=p.buffer_end_page){p.page=page;render(current);return;}if(!p.tool)return;button.disabled=true;app.classList.add("loading");try{const args={...(p.arguments||{}),page,page_size:p.page_size};const result=await request("tools/call",{name:p.tool,arguments:args});if(result?.structuredContent)render(result.structuredContent);else throw new Error("The server returned no table data.");}catch(error){app.replaceChildren(el("div","error",error?.message||"Could not load this page."));}finally{app.classList.remove("loading");}}
 window.addEventListener("message",event=>{if(event.source!==window.parent)return;const message=event.data;if(!message||message.jsonrpc!=="2.0")return;if(message.id!==undefined&&pending.has(message.id)){const waiter=pending.get(message.id);pending.delete(message.id);message.error?waiter.reject(message.error):waiter.resolve(message.result);return;}if(message.method==="ui/notifications/tool-result"&&message.params?.structuredContent)render(message.params.structuredContent);},{passive:true});
 if(window.openai?.toolOutput)render(window.openai.toolOutput);
 </script></body></html>`

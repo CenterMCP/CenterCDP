@@ -59,7 +59,7 @@ func TestRegisterCDPTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	html, ok := contents[0].(mcp.TextResourceContents)
-	if !ok || !strings.Contains(html.Text, "tools/call") || !strings.Contains(html.Text, "Previous") {
+	if !ok || !strings.Contains(html.Text, "tools/call") || !strings.Contains(html.Text, "Previous") || !strings.Contains(html.Text, "buffer_start_page") {
 		t.Fatalf("table resource does not contain the paginated MCP Apps UI")
 	}
 }

@@ -295,7 +295,7 @@ func (s *Service) GetContact(ctx context.Context, in GetContactInput) (map[strin
 	return map[string]any{"database_id": in.DatabaseID, "contact_id": in.ContactID, "attributes": attributes, "identities": identities, "consents": consents, "created_at": createdAt, "updated_at": updatedAt}, nil
 }
 
-func (s *Service) SearchContacts(ctx context.Context, in SearchContactsInput) ([]map[string]any, error) {
+func (s *Service) SearchContacts(ctx context.Context, in SearchContactsInput) (*PageResult, error) {
 	db, err := s.manager.Get(ctx, in.DatabaseID)
 	if err != nil {
 		return nil, err
@@ -319,26 +319,35 @@ func (s *Service) SearchContacts(ctx context.Context, in SearchContactsInput) ([
 	if err := validateTypedValue(in.AttributeKey, typ, enums, in.Value); err != nil {
 		return nil, err
 	}
-	limit := in.Limit
-	if limit <= 0 || limit > 100 {
-		limit = 50
+	pageSize := in.PageSize
+	if pageSize == 0 && in.Limit > 0 {
+		pageSize = in.Limit
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id,attributes_json,created_at,updated_at FROM contacts WHERE json_extract(attributes_json,?)=? ORDER BY updated_at DESC LIMIT ?`, "$."+in.AttributeKey, in.Value, limit)
+	path := "$." + in.AttributeKey
+	total, err := countQuery(ctx, db, `SELECT COUNT(*) FROM contacts WHERE json_extract(attributes_json,?)=?`, path, in.Value)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var result []map[string]any
-	for rows.Next() {
-		var id, attrsRaw, createdAt, updatedAt string
-		if err := rows.Scan(&id, &attrsRaw, &createdAt, &updatedAt); err != nil {
-			return nil, err
-		}
-		var attributes map[string]any
-		_ = json.Unmarshal([]byte(attrsRaw), &attributes)
-		result = append(result, map[string]any{"contact_id": id, "attributes": attributes, "created_at": createdAt, "updated_at": updatedAt})
+	window := newPaginationWindow(in.Page, pageSize, total)
+	rows, err := queryMaps(ctx, db, `SELECT c.id AS contact_id,
+		(SELECT ci.original_value FROM contact_identities ci WHERE ci.contact_id=c.id
+		 ORDER BY ci.is_primary DESC,ci.created_at LIMIT 1) AS primary_identity,
+		c.attributes_json,c.created_at,c.updated_at
+		FROM contacts c WHERE json_extract(c.attributes_json,?)=?
+		ORDER BY c.updated_at DESC,c.id LIMIT ? OFFSET ?`, path, in.Value, window.limit, window.offset)
+	if err != nil {
+		return nil, err
 	}
-	return result, rows.Err()
+	for _, row := range rows {
+		raw, _ := row["attributes_json"].(string)
+		attributes := map[string]any{}
+		if raw != "" {
+			_ = json.Unmarshal([]byte(raw), &attributes)
+		}
+		row["attributes"] = attributes
+		delete(row, "attributes_json")
+	}
+	return pageResult(rows, window), nil
 }
 
 func (s *Service) TrackEvent(ctx context.Context, in TrackEventInput) (map[string]any, error) {

@@ -67,7 +67,15 @@ type SearchContactsInput struct {
 	DatabaseID   string `json:"database_id" jsonschema:"required"`
 	AttributeKey string `json:"attribute_key" jsonschema:"required"`
 	Value        any    `json:"value" jsonschema:"required"`
-	Limit        int    `json:"limit,omitempty"`
+	Page         int    `json:"page,omitempty"`
+	PageSize     int    `json:"page_size,omitempty"`
+	// Limit is kept for backwards compatibility. Prefer page_size.
+	Limit int `json:"limit,omitempty"`
+}
+
+type PaginationInput struct {
+	Page     int `json:"page,omitempty"`
+	PageSize int `json:"page_size,omitempty"`
 }
 
 type PageInput struct {
@@ -84,11 +92,13 @@ type StatusPageInput struct {
 }
 
 type PageResult struct {
-	Rows       []map[string]any `json:"rows"`
-	Page       int              `json:"page"`
-	PageSize   int              `json:"page_size"`
-	Total      int              `json:"total"`
-	TotalPages int              `json:"total_pages"`
+	Rows            []map[string]any `json:"rows"`
+	Page            int              `json:"page"`
+	PageSize        int              `json:"page_size"`
+	Total           int              `json:"total"`
+	TotalPages      int              `json:"total_pages"`
+	BufferStartPage int              `json:"buffer_start_page"`
+	BufferEndPage   int              `json:"buffer_end_page"`
 }
 
 type TrackEventInput struct {

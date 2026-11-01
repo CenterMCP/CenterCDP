@@ -34,6 +34,14 @@ func decodeCDPInput[T any](request mcp.CallToolRequest) (T, error) {
 	return input, nil
 }
 
+func decodeOptionalCDPInput[T any](request mcp.CallToolRequest) (T, error) {
+	var input T
+	if request.Params.Arguments == nil {
+		return input, nil
+	}
+	return decodeCDPInput[T](request)
+}
+
 func cdpResult(value any, err error) (*mcp.CallToolResult, error) {
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -50,21 +58,16 @@ func (h *CDPHandler) CreateDatabase(ctx context.Context, request mcp.CallToolReq
 	value, err := h.service.Manager().Create(ctx, in.Name)
 	return cdpResult(value, err)
 }
-func (h *CDPHandler) ListDatabases(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	value, err := h.service.Manager().List(ctx)
+func (h *CDPHandler) ListDatabases(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	in, err := decodeOptionalCDPInput[cdp.PaginationInput](request)
 	if err != nil {
 		return tableResult(nil, err)
 	}
-	view := tableView{
-		View: "table", Title: "Customer databases", Entity: "databases",
-		Columns: []tableColumn{
-			{Key: "id", Label: "Database ID"}, {Key: "name", Label: "Name"}, {Key: "slug", Label: "Slug"},
-			{Key: "status", Label: "Status"}, {Key: "schema_version", Label: "Schema version"}, {Key: "created_at", Label: "Created"},
-		},
-		Rows:       value,
-		Pagination: tablePagination{Page: 1, PageSize: len(value), Total: len(value), TotalPages: 1},
-	}
-	return tableResult(view, nil)
+	value, err := h.service.ListDatabases(ctx, in)
+	return tableResult(newPagedTable("Customer databases", "databases", "list_customer_databases", []tableColumn{
+		{Key: "id", Label: "Database ID"}, {Key: "name", Label: "Name"}, {Key: "slug", Label: "Slug"},
+		{Key: "status", Label: "Status"}, {Key: "schema_version", Label: "Schema version"}, {Key: "created_at", Label: "Created"},
+	}, value, map[string]any{}), err)
 }
 func (h *CDPHandler) GenDemoData(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	in, err := decodeCDPInput[cdp.DatabaseScopedInput](request)
@@ -131,11 +134,8 @@ func (h *CDPHandler) SearchContacts(ctx context.Context, request mcp.CallToolReq
 	if err != nil {
 		return tableResult(nil, err)
 	}
-	view := tableView{
-		View: "table", Title: "Contact search results", Entity: "contacts", Columns: contactColumns(value), Rows: value,
-		Pagination: tablePagination{Page: 1, PageSize: len(value), Total: len(value), TotalPages: 1},
-	}
-	return tableResult(view, nil)
+	return tableResult(newPagedTable("Contact search results", "contacts", "search_contacts", contactColumns(value.Rows), value,
+		map[string]any{"database_id": in.DatabaseID, "attribute_key": in.AttributeKey, "value": in.Value}), nil)
 }
 
 func (h *CDPHandler) ListContacts(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -306,7 +306,7 @@ func RegisterCDPTools(mcpServer *server.MCPServer, h *CDPHandler) {
 	registerTableResource(mcpServer)
 	register("get_code_version", "Return the running CenterCDP feature version, exact Git revision, and whether it was built with uncommitted code changes.", true, false, true, mcp.NewTool("get_code_version"), h.GetCodeVersion)
 	register("create_customer_database", "Create an isolated customer database for a business or brand.", false, false, false, mcp.NewTool("create_customer_database", mcp.WithInputSchema[cdp.DatabaseInput]()), h.CreateDatabase)
-	registerTable("list_customer_databases", "List available customer databases in a table. Use database_id explicitly in every CDP operation.", mcp.NewTool("list_customer_databases"), h.ListDatabases)
+	registerTable("list_customer_databases", "List available customer databases in a paginated table. Use database_id explicitly in every CDP operation.", mcp.NewTool("list_customer_databases", mcp.WithInputSchema[cdp.PaginationInput]()), h.ListDatabases)
 	register("gen_demo_data", "Replace the reserved demo_ namespace with a complete sample CDP dataset containing 300 varied contacts. Existing non-demo data is preserved.", false, true, true, mcp.NewTool("gen_demo_data", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.GenDemoData)
 	register("reset_demo_data", "Delete all records in the reserved demo_ namespace while preserving non-demo data.", false, true, true, mcp.NewTool("reset_demo_data", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.ResetDemoData)
 	register("get_data_dictionary", "Return contact attributes, events, and event parameters defined for a customer database.", true, false, true, mcp.NewTool("get_data_dictionary", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.DataDictionary)
@@ -315,7 +315,7 @@ func RegisterCDPTools(mcpServer *server.MCPServer, h *CDPHandler) {
 	register("upsert_contact", "Resolve identities and transactionally create or update a contact using the database data dictionary.", false, false, true, mcp.NewTool("upsert_contact", mcp.WithInputSchema[cdp.UpsertContactInput]()), h.UpsertContact)
 	register("get_contact", "Get a contact with attributes, identities, and consent state.", true, false, true, mcp.NewTool("get_contact", mcp.WithInputSchema[cdp.GetContactInput]()), h.GetContact)
 	registerTable("list_contacts", "List contacts as a paginated table. Use this for requests to show, browse, or list contacts.", mcp.NewTool("list_contacts", mcp.WithInputSchema[cdp.PageInput]()), h.ListContacts)
-	registerTable("search_contacts", "Search contacts by one typed, filterable attribute and show the results in a table.", mcp.NewTool("search_contacts", mcp.WithInputSchema[cdp.SearchContactsInput]()), h.SearchContacts)
+	registerTable("search_contacts", "Search contacts by one typed, filterable attribute and show the results in a paginated table.", mcp.NewTool("search_contacts", mcp.WithInputSchema[cdp.SearchContactsInput]()), h.SearchContacts)
 	register("track_event", "Append a validated, idempotent customer event.", false, false, true, mcp.NewTool("track_event", mcp.WithInputSchema[cdp.TrackEventInput]()), h.TrackEvent)
 	register("create_segment", "Create and validate a rule segment or constrained read-only SQL segment returning contact_id.", false, false, false, mcp.NewTool("create_segment", mcp.WithInputSchema[cdp.CreateSegmentInput]()), h.CreateSegment)
 	registerTable("list_segments", "List segments as a paginated table, optionally filtered by status. Use this for requests to show, browse, or list segments.", mcp.NewTool("list_segments", mcp.WithInputSchema[cdp.StatusPageInput]()), h.ListSegments)
