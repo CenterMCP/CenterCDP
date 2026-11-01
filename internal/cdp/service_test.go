@@ -288,6 +288,46 @@ func TestGenerateAndResetDemoData(t *testing.T) {
 	assertCount(`SELECT COUNT(*) FROM event_definitions WHERE event_key='purchase'`, 1)
 }
 
+func TestCollectionListsArePaginated(t *testing.T) {
+	service, _ := setupService(t)
+	ctx := context.Background()
+	if _, err := service.GenerateDemoData(ctx, DefaultDatabaseID); err != nil {
+		t.Fatal(err)
+	}
+
+	contacts, err := service.ListContacts(ctx, PageInput{DatabaseID: DefaultDatabaseID, Page: 2, PageSize: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contacts.Total != 6 || contacts.TotalPages != 3 || contacts.Page != 2 || len(contacts.Rows) != 2 {
+		t.Fatalf("unexpected contacts page: %#v", contacts)
+	}
+	if _, ok := contacts.Rows[0]["attributes"].(map[string]any); !ok {
+		t.Fatalf("contact attributes were not decoded: %#v", contacts.Rows[0])
+	}
+
+	segments, err := service.ListSegments(ctx, StatusPageInput{DatabaseID: DefaultDatabaseID, Status: "validated", PageSize: 1})
+	if err != nil || segments.Total != 2 || len(segments.Rows) != 1 {
+		t.Fatalf("unexpected segments page: %#v, %v", segments, err)
+	}
+	campaigns, err := service.ListCampaigns(ctx, StatusPageInput{DatabaseID: DefaultDatabaseID, Status: "completed"})
+	if err != nil || campaigns.Total != 1 || len(campaigns.Rows) != 1 {
+		t.Fatalf("unexpected campaigns page: %#v, %v", campaigns, err)
+	}
+	templates, err := service.ListMessageTemplates(ctx, StatusPageInput{DatabaseID: DefaultDatabaseID, Status: "active"})
+	if err != nil || templates.Total != 2 {
+		t.Fatalf("unexpected templates page: %#v, %v", templates, err)
+	}
+	journeys, err := service.ListJourneys(ctx, StatusPageInput{DatabaseID: DefaultDatabaseID, Status: "draft"})
+	if err != nil || journeys.Total != 1 {
+		t.Fatalf("unexpected journeys page: %#v, %v", journeys, err)
+	}
+	outbox, err := service.ListOutbox(ctx, OutboxListInput{DatabaseID: DefaultDatabaseID, Status: "sent", PageSize: 2})
+	if err != nil || outbox.Total != 3 || len(outbox.Rows) != 2 || outbox.TotalPages != 2 {
+		t.Fatalf("unexpected outbox page: %#v, %v", outbox, err)
+	}
+}
+
 func demoIDColumn(table string) string {
 	switch table {
 	case "segment_memberships":

@@ -70,6 +70,27 @@ type SearchContactsInput struct {
 	Limit        int    `json:"limit,omitempty"`
 }
 
+type PageInput struct {
+	DatabaseID string `json:"database_id" jsonschema:"required"`
+	Page       int    `json:"page,omitempty"`
+	PageSize   int    `json:"page_size,omitempty"`
+}
+
+type StatusPageInput struct {
+	DatabaseID string `json:"database_id" jsonschema:"required"`
+	Status     string `json:"status,omitempty"`
+	Page       int    `json:"page,omitempty"`
+	PageSize   int    `json:"page_size,omitempty"`
+}
+
+type PageResult struct {
+	Rows       []map[string]any `json:"rows"`
+	Page       int              `json:"page"`
+	PageSize   int              `json:"page_size"`
+	Total      int              `json:"total"`
+	TotalPages int              `json:"total_pages"`
+}
+
 type TrackEventInput struct {
 	DatabaseID     string         `json:"database_id" jsonschema:"required"`
 	ContactID      string         `json:"contact_id,omitempty"`
@@ -171,5 +192,8 @@ type DatabaseScopedInput struct {
 type OutboxListInput struct {
 	DatabaseID string `json:"database_id" jsonschema:"required"`
 	Status     string `json:"status,omitempty"`
-	Limit      int    `json:"limit,omitempty"`
+	Page       int    `json:"page,omitempty"`
+	PageSize   int    `json:"page_size,omitempty"`
+	// Limit is kept for backwards compatibility. Prefer page_size.
+	Limit int `json:"limit,omitempty"`
 }

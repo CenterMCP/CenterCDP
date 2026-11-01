@@ -143,17 +143,26 @@ func campaignRecipient(ctx context.Context, tx *sql.Tx, contactID, channel strin
 	return recipient, granted, nil
 }
 
-func (s *Service) ListOutbox(ctx context.Context, in OutboxListInput) ([]map[string]any, error) {
+func (s *Service) ListOutbox(ctx context.Context, in OutboxListInput) (*PageResult, error) {
 	db, err := s.manager.Get(ctx, in.DatabaseID)
 	if err != nil {
 		return nil, err
 	}
-	limit := in.Limit
-	if limit <= 0 || limit > 100 {
-		limit = 50
+	pageSize := in.PageSize
+	if pageSize == 0 && in.Limit > 0 {
+		pageSize = in.Limit
 	}
-	if in.Status == "" {
-		return queryMaps(ctx, db, `SELECT id,contact_id,campaign_id,channel,template_id,recipient,status,scheduled_at,attempt,last_error FROM message_outbox ORDER BY created_at DESC LIMIT ?`, limit)
+	page, pageSize, offset := normalizePage(in.Page, pageSize)
+	where, args := statusWhere(in.Status)
+	total, err := countQuery(ctx, db, `SELECT COUNT(*) FROM message_outbox`+where, args...)
+	if err != nil {
+		return nil, err
 	}
-	return queryMaps(ctx, db, `SELECT id,contact_id,campaign_id,channel,template_id,recipient,status,scheduled_at,attempt,last_error FROM message_outbox WHERE status=? ORDER BY created_at DESC LIMIT ?`, in.Status, limit)
+	queryArgs := append(args, pageSize, offset)
+	rows, err := queryMaps(ctx, db, `SELECT id,contact_id,campaign_id,channel,template_id,recipient,status,scheduled_at,attempt,last_error
+		FROM message_outbox`+where+` ORDER BY created_at DESC,id LIMIT ? OFFSET ?`, queryArgs...)
+	if err != nil {
+		return nil, err
+	}
+	return pageResult(rows, page, pageSize, total), nil
 }

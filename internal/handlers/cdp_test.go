@@ -1,9 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -13,9 +16,9 @@ func TestRegisterCDPTools(t *testing.T) {
 	tools := mcpServer.ListTools()
 	for _, name := range []string{
 		"create_customer_database", "list_customer_databases", "gen_demo_data", "reset_demo_data", "get_data_dictionary",
-		"define_contact_attribute", "define_event", "upsert_contact", "get_contact", "search_contacts", "track_event",
-		"create_segment", "preview_segment", "preview_segments_across_databases",
-		"save_message_template", "create_campaign", "launch_campaign", "create_journey",
+		"define_contact_attribute", "define_event", "upsert_contact", "get_contact", "list_contacts", "search_contacts", "track_event",
+		"create_segment", "list_segments", "preview_segment", "preview_segments_across_databases",
+		"save_message_template", "list_message_templates", "create_campaign", "list_campaigns", "launch_campaign", "create_journey", "list_journeys",
 		"publish_journey", "pause_journey", "list_message_outbox",
 	} {
 		tool := tools[name]
@@ -26,5 +29,36 @@ func TestRegisterCDPTools(t *testing.T) {
 		if _, err := json.Marshal(tool.Tool); err != nil {
 			t.Errorf("tool %q has an invalid schema: %v", name, err)
 		}
+	}
+
+	for _, name := range []string{
+		"list_customer_databases", "list_contacts", "search_contacts", "list_segments",
+		"list_message_templates", "list_campaigns", "list_journeys", "list_message_outbox",
+	} {
+		tool := tools[name].Tool
+		if tool.Meta == nil {
+			t.Fatalf("table tool %q has no UI metadata", name)
+		}
+		ui, _ := tool.Meta.AdditionalFields["ui"].(map[string]any)
+		if got := ui["resourceUri"]; got != tableResourceURI {
+			t.Errorf("table tool %q resource URI = %v, want %q", name, got, tableResourceURI)
+		}
+	}
+
+	resources := mcpServer.ListResources()
+	resource := resources[tableResourceURI]
+	if resource == nil {
+		t.Fatalf("table resource %q was not registered", tableResourceURI)
+	}
+	if resource.Resource.MIMEType != tableMIMEType {
+		t.Errorf("table resource MIME type = %q, want %q", resource.Resource.MIMEType, tableMIMEType)
+	}
+	contents, err := resource.Handler(context.Background(), mcp.ReadResourceRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html, ok := contents[0].(mcp.TextResourceContents)
+	if !ok || !strings.Contains(html.Text, "tools/call") || !strings.Contains(html.Text, "Previous") {
+		t.Fatalf("table resource does not contain the paginated MCP Apps UI")
 	}
 }

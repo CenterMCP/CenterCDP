@@ -88,12 +88,14 @@ If `--data-dir` is omitted, managed customer databases are stored next to the de
 | --- | --- |
 | Databases | `create_customer_database`, `list_customer_databases`, `gen_demo_data`, `reset_demo_data` |
 | Data dictionary | `get_data_dictionary`, `define_contact_attribute`, `define_event` |
-| Contacts and events | `upsert_contact`, `get_contact`, `search_contacts`, `track_event` |
-| Segments | `create_segment`, `preview_segment`, `preview_segments_across_databases` |
-| Messaging | `save_message_template`, `create_campaign`, `launch_campaign`, `list_message_outbox` |
-| Journeys | `create_journey`, `publish_journey`, `pause_journey` |
+| Contacts and events | `upsert_contact`, `get_contact`, `list_contacts`, `search_contacts`, `track_event` |
+| Segments | `create_segment`, `list_segments`, `preview_segment`, `preview_segments_across_databases` |
+| Messaging | `save_message_template`, `list_message_templates`, `create_campaign`, `list_campaigns`, `launch_campaign`, `list_message_outbox` |
+| Journeys | `create_journey`, `list_journeys`, `publish_journey`, `pause_journey` |
 
 Every CDP tool is explicitly scoped by `database_id`. The database supplied with `--database` is registered as `default`; databases created through `create_customer_database` receive their own ID and SQLite file.
+
+Collection tools return structured data and are bound to a shared MCP Apps table resource. Compatible clients therefore render contacts, segments, templates, campaigns, journeys, databases, and outbox messages as deterministic tables instead of asking the model to choose a presentation. Paginated list tools accept `page` and `page_size` (20 rows by default, 100 maximum), and the table provides Previous/Next controls.
 
 Contact attributes and event parameters must be defined before data is ingested. Supported data types are `string`, `integer`, `number`, `boolean`, `date`, `datetime`, `enum`, `object`, and `array`.
 
