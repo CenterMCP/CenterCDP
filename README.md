@@ -86,6 +86,7 @@ If `--data-dir` is omitted, managed customer databases are stored next to the de
 
 | Area | Tools |
 | --- | --- |
+| System | `get_code_version` |
 | Databases | `create_customer_database`, `list_customer_databases`, `gen_demo_data`, `reset_demo_data` |
 | Data dictionary | `get_data_dictionary`, `define_contact_attribute`, `define_event` |
 | Contacts and events | `upsert_contact`, `get_contact`, `list_contacts`, `search_contacts`, `track_event` |
@@ -97,9 +98,11 @@ Every CDP tool is explicitly scoped by `database_id`. The database supplied with
 
 Collection tools return structured data and are bound to a shared MCP Apps table resource. Compatible clients therefore render contacts, segments, templates, campaigns, journeys, databases, and outbox messages as deterministic tables instead of asking the model to choose a presentation. Paginated list tools accept `page` and `page_size` (20 rows by default, 100 maximum), and the table provides Previous/Next controls.
 
+`get_code_version` reports the semantic feature version, the exact Git revision embedded by the Go toolchain, and a `modified` flag for builds made from uncommitted changes. The semantic version lives in `internal/appversion/version.go`; bump its minor component for every feature and its patch component for fixes.
+
 Contact attributes and event parameters must be defined before data is ingested. Supported data types are `string`, `integer`, `number`, `boolean`, `date`, `datetime`, `enum`, `object`, and `array`.
 
-`gen_demo_data` creates a deterministic sample dataset in the selected database, including dictionary entries, contacts, events, segments, templates, a completed campaign, and a draft journey. It first replaces any prior generated demo dataset, so repeated calls do not create duplicates. `reset_demo_data` deletes records in the reserved `demo_` ID/key namespace and leaves non-demo data intact. Both tools return per-table counts.
+`gen_demo_data` creates a deterministic sample dataset in the selected database, including 300 varied contacts, behavioral events, segments, templates, a completed campaign, and a draft journey. It first replaces any prior generated demo dataset, so repeated calls do not create duplicates. `reset_demo_data` deletes records in the reserved `demo_` ID/key namespace and leaves non-demo data intact. Both tools return per-table counts.
 
 ### SQLite administration
 

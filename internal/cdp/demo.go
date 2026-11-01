@@ -12,6 +12,7 @@ import (
 // touching customer-created data. Keep every ID and dictionary key created by
 // GenerateDemoData under this prefix.
 const demoPrefix = "demo_"
+const demoContactCount = 300
 
 type demoContact struct {
 	id         string
@@ -24,6 +25,12 @@ type demoContact struct {
 	daysAgo    int
 	emailOptIn bool
 	smsOptIn   bool
+}
+
+type demoEvent struct {
+	id, contactID, eventKey string
+	daysAgo                 int
+	properties              map[string]any
 }
 
 // GenerateDemoData replaces the demo namespace with a deterministic sample
@@ -129,6 +136,22 @@ func (s *Service) GenerateDemoData(ctx context.Context, databaseID string) (map[
 		{"demo_contact_005", "Nida", "demo.nida@example.invalid", "+66810000005", "TH", "bronze", 8500, 7, true, true},
 		{"demo_contact_006", "Arun", "demo.arun@example.invalid", "+66810000006", "TH", "gold", 210000, 0, true, true},
 	}
+	countries := []string{"TH", "TH", "SG", "US"}
+	tiers := []string{"bronze", "silver", "gold"}
+	for number := len(contacts) + 1; number <= demoContactCount; number++ {
+		contacts = append(contacts, demoContact{
+			id:         fmt.Sprintf("demo_contact_%03d", number),
+			name:       fmt.Sprintf("Customer %03d", number),
+			email:      fmt.Sprintf("demo.customer%03d@example.invalid", number),
+			phone:      fmt.Sprintf("+6682%07d", number),
+			country:    countries[(number-1)%len(countries)],
+			tier:       tiers[(number-1)%len(tiers)],
+			lifetime:   float64(5000 + (number%20)*7500),
+			daysAgo:    (number * 7) % 91,
+			emailOptIn: number%5 != 0,
+			smsOptIn:   number%3 == 0,
+		})
+	}
 	for index, contact := range contacts {
 		lastSeen := seededAt.AddDate(0, 0, -contact.daysAgo).Format(time.RFC3339)
 		attributes, _ := json.Marshal(map[string]any{
@@ -160,11 +183,7 @@ func (s *Service) GenerateDemoData(ctx context.Context, databaseID string) (map[
 		}
 	}
 
-	events := []struct {
-		id, contactID, eventKey string
-		daysAgo                 int
-		properties              map[string]any
-	}{
+	events := []demoEvent{
 		{"demo_event_001", "demo_contact_001", "demo_page_view", 7, map[string]any{"page_path": "/products/skincare", "device": "mobile"}},
 		{"demo_event_002", "demo_contact_001", "demo_purchase", 6, map[string]any{"order_id": "DEMO-1001", "amount": 3200.0, "currency": "THB"}},
 		{"demo_event_003", "demo_contact_002", "demo_page_view", 4, map[string]any{"page_path": "/collections/new", "device": "desktop"}},
@@ -175,6 +194,50 @@ func (s *Service) GenerateDemoData(ctx context.Context, databaseID string) (map[
 		{"demo_event_008", "demo_contact_006", "demo_page_view", 2, map[string]any{"page_path": "/products/serum", "device": "mobile"}},
 		{"demo_event_009", "demo_contact_006", "demo_purchase", 1, map[string]any{"order_id": "DEMO-1003", "amount": 4900.0, "currency": "THB"}},
 		{"demo_event_010", "demo_contact_006", "demo_page_view", 0, map[string]any{"page_path": "/account/orders", "device": "mobile"}},
+	}
+	eventNumber := len(events) + 1
+	devices := []string{"mobile", "desktop", "tablet"}
+	for index, contact := range contacts[6:] {
+		contactNumber := index + 7
+		events = append(events, demoEvent{
+			id:        fmt.Sprintf("demo_event_%04d", eventNumber),
+			contactID: contact.id,
+			eventKey:  "demo_page_view",
+			daysAgo:   contact.daysAgo,
+			properties: map[string]any{
+				"page_path": fmt.Sprintf("/demo/products/%d", contactNumber%12+1),
+				"device":    devices[contactNumber%len(devices)],
+			},
+		})
+		eventNumber++
+		if contactNumber%3 == 0 {
+			currency := map[string]string{"TH": "THB", "SG": "SGD", "US": "USD"}[contact.country]
+			events = append(events, demoEvent{
+				id:        fmt.Sprintf("demo_event_%04d", eventNumber),
+				contactID: contact.id,
+				eventKey:  "demo_purchase",
+				daysAgo:   min(contact.daysAgo+1, 90),
+				properties: map[string]any{
+					"order_id": fmt.Sprintf("DEMO-%04d", contactNumber),
+					"amount":   float64(500 + (contactNumber%25)*375),
+					"currency": currency,
+				},
+			})
+			eventNumber++
+		}
+		if contactNumber%5 == 0 {
+			events = append(events, demoEvent{
+				id:        fmt.Sprintf("demo_event_%04d", eventNumber),
+				contactID: contact.id,
+				eventKey:  "demo_cart_abandoned",
+				daysAgo:   min(contact.daysAgo+2, 90),
+				properties: map[string]any{
+					"amount":     float64(750 + (contactNumber%18)*250),
+					"item_count": contactNumber%5 + 1,
+				},
+			})
+			eventNumber++
+		}
 	}
 	for _, event := range events {
 		properties, _ := json.Marshal(event.properties)
@@ -199,8 +262,16 @@ func (s *Service) GenerateDemoData(ctx context.Context, databaseID string) (map[
 		return nil, err
 	}
 	segmentMembers := map[string][]string{
-		"demo_segment_thailand":   {"demo_contact_001", "demo_contact_002", "demo_contact_005", "demo_contact_006"},
-		"demo_segment_high_value": {"demo_contact_001", "demo_contact_003", "demo_contact_006"},
+		"demo_segment_thailand":   {},
+		"demo_segment_high_value": {},
+	}
+	for _, contact := range contacts {
+		if contact.country == "TH" {
+			segmentMembers["demo_segment_thailand"] = append(segmentMembers["demo_segment_thailand"], contact.id)
+		}
+		if contact.lifetime >= 50000 {
+			segmentMembers["demo_segment_high_value"] = append(segmentMembers["demo_segment_high_value"], contact.id)
+		}
 	}
 	for segmentID, contactIDs := range segmentMembers {
 		for _, contactID := range contactIDs {
@@ -222,26 +293,24 @@ func (s *Service) GenerateDemoData(ctx context.Context, databaseID string) (map[
 		VALUES(?,?,?,?, 'completed',?,?)`, "demo_campaign_thailand", "Demo: Thailand gold-member offer", "demo_segment_thailand", "demo_template_email", now, now); err != nil {
 		return nil, err
 	}
+	contactsByID := make(map[string]demoContact, len(contacts))
+	for _, contact := range contacts {
+		contactsByID[contact.id] = contact
+	}
 	for _, contactID := range segmentMembers["demo_segment_thailand"] {
 		status := "sent"
-		if contactID == "demo_contact_005" {
+		contact := contactsByID[contactID]
+		if !contact.emailOptIn {
 			status = "suppressed"
 		}
 		if err := exec("campaign_audience", `INSERT INTO campaign_audience(campaign_id,contact_id,status,created_at) VALUES(?,?,?,?)`, "demo_campaign_thailand", contactID, status, now); err != nil {
 			return nil, err
 		}
 		if status == "sent" {
-			var recipient string
-			for _, contact := range contacts {
-				if contact.id == contactID {
-					recipient = contact.email
-					break
-				}
-			}
 			messageID := "demo_message_" + contactID[len("demo_contact_"):]
 			if err := exec("message_outbox", `INSERT INTO message_outbox
 				(id,contact_id,campaign_id,channel,template_id,recipient,payload_json,idempotency_key,status,scheduled_at,provider_message_id,attempt,created_at,sent_at)
-				VALUES(?,?,?,?,?,?,?,?,'sent',?,?,1,?,?)`, messageID, contactID, "demo_campaign_thailand", "email", "demo_template_email", recipient,
+				VALUES(?,?,?,?,?,?,?,?,'sent',?,?,1,?,?)`, messageID, contactID, "demo_campaign_thailand", "email", "demo_template_email", contact.email,
 				`{"source":"demo_generator"}`, "demo:campaign:thailand:"+contactID, now, "demo-provider-"+contactID, now, now); err != nil {
 				return nil, err
 			}

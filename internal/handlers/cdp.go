@@ -7,12 +7,17 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/rvarun11/sqlite-mcp/internal/appversion"
 	"github.com/rvarun11/sqlite-mcp/internal/cdp"
 )
 
 type CDPHandler struct{ service *cdp.Service }
 
 func NewCDPHandler(service *cdp.Service) *CDPHandler { return &CDPHandler{service: service} }
+
+func (h *CDPHandler) GetCodeVersion(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return cdpResult(appversion.Current(), nil)
+}
 
 func decodeCDPInput[T any](request mcp.CallToolRequest) (T, error) {
 	var input T
@@ -299,9 +304,10 @@ func RegisterCDPTools(mcpServer *server.MCPServer, h *CDPHandler) {
 		register(name, description, true, false, true, tool, handler)
 	}
 	registerTableResource(mcpServer)
+	register("get_code_version", "Return the running CenterCDP feature version, exact Git revision, and whether it was built with uncommitted code changes.", true, false, true, mcp.NewTool("get_code_version"), h.GetCodeVersion)
 	register("create_customer_database", "Create an isolated customer database for a business or brand.", false, false, false, mcp.NewTool("create_customer_database", mcp.WithInputSchema[cdp.DatabaseInput]()), h.CreateDatabase)
 	registerTable("list_customer_databases", "List available customer databases in a table. Use database_id explicitly in every CDP operation.", mcp.NewTool("list_customer_databases"), h.ListDatabases)
-	register("gen_demo_data", "Replace the reserved demo_ namespace with a complete sample CDP dataset. Existing non-demo data is preserved.", false, true, true, mcp.NewTool("gen_demo_data", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.GenDemoData)
+	register("gen_demo_data", "Replace the reserved demo_ namespace with a complete sample CDP dataset containing 300 varied contacts. Existing non-demo data is preserved.", false, true, true, mcp.NewTool("gen_demo_data", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.GenDemoData)
 	register("reset_demo_data", "Delete all records in the reserved demo_ namespace while preserving non-demo data.", false, true, true, mcp.NewTool("reset_demo_data", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.ResetDemoData)
 	register("get_data_dictionary", "Return contact attributes, events, and event parameters defined for a customer database.", true, false, true, mcp.NewTool("get_data_dictionary", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.DataDictionary)
 	register("define_contact_attribute", "Create or version a typed contact attribute definition before ingesting that field.", false, false, true, mcp.NewTool("define_contact_attribute", mcp.WithInputSchema[cdp.DefineContactAttributeInput]()), h.DefineContactAttribute)

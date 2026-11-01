@@ -15,6 +15,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/rvarun11/sqlite-mcp/internal/appversion"
 	"github.com/rvarun11/sqlite-mcp/internal/cdp"
 	"github.com/rvarun11/sqlite-mcp/internal/config"
 	"github.com/rvarun11/sqlite-mcp/internal/handlers"
@@ -33,10 +34,11 @@ var (
 
 func main() {
 	var rootCmd = &cobra.Command{
-		Use:   "sqlite-mcp",
-		Short: "SQLite MCP Server - A Model Context Protocol server for SQLite operations",
-		Long:  `SQLite MCP Server provides a standardized interface for SQLite database operations through the Model Context Protocol (MCP). It supports schema introspection, query execution, and database modifications.`,
-		Run:   runServer,
+		Use:     "sqlite-mcp",
+		Short:   "SQLite MCP Server - A Model Context Protocol server for SQLite operations",
+		Long:    `SQLite MCP Server provides a standardized interface for SQLite database operations through the Model Context Protocol (MCP). It supports schema introspection, query execution, and database modifications.`,
+		Version: appversion.String(),
+		Run:     runServer,
 	}
 
 	rootCmd.Flags().StringVarP(&dbPath, "database", "d", "", "Path to SQLite database file (required)")
@@ -101,7 +103,7 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	mcpServer := server.NewMCPServer(
 		"sqlite-mcp",
-		"1.0.0",
+		appversion.String(),
 	)
 
 	// Get Schema Tool - No parameters needed

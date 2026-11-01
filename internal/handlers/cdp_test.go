@@ -8,6 +8,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/rvarun11/sqlite-mcp/internal/appversion"
 )
 
 func TestRegisterCDPTools(t *testing.T) {
@@ -15,7 +16,7 @@ func TestRegisterCDPTools(t *testing.T) {
 	RegisterCDPTools(mcpServer, NewCDPHandler(nil))
 	tools := mcpServer.ListTools()
 	for _, name := range []string{
-		"create_customer_database", "list_customer_databases", "gen_demo_data", "reset_demo_data", "get_data_dictionary",
+		"get_code_version", "create_customer_database", "list_customer_databases", "gen_demo_data", "reset_demo_data", "get_data_dictionary",
 		"define_contact_attribute", "define_event", "upsert_contact", "get_contact", "list_contacts", "search_contacts", "track_event",
 		"create_segment", "list_segments", "preview_segment", "preview_segments_across_databases",
 		"save_message_template", "list_message_templates", "create_campaign", "list_campaigns", "launch_campaign", "create_journey", "list_journeys",
@@ -60,5 +61,19 @@ func TestRegisterCDPTools(t *testing.T) {
 	html, ok := contents[0].(mcp.TextResourceContents)
 	if !ok || !strings.Contains(html.Text, "tools/call") || !strings.Contains(html.Text, "Previous") {
 		t.Fatalf("table resource does not contain the paginated MCP Apps UI")
+	}
+}
+
+func TestGetCodeVersion(t *testing.T) {
+	result, err := NewCDPHandler(nil).GetCodeVersion(context.Background(), mcp.CallToolRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, ok := result.StructuredContent.(appversion.Info)
+	if !ok {
+		t.Fatalf("structured content type = %T", result.StructuredContent)
+	}
+	if info.FeatureVersion != appversion.FeatureVersion || info.Version == "" {
+		t.Fatalf("unexpected version result: %#v", info)
 	}
 }

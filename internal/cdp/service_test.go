@@ -220,7 +220,7 @@ func TestGenerateAndResetDemoData(t *testing.T) {
 		t.Fatal(err)
 	}
 	created := generated["created"].(map[string]int64)
-	if created["contacts"] != 6 || created["events"] != 10 || created["segments"] != 2 {
+	if created["contacts"] != 300 || created["events"] != 461 || created["segments"] != 2 {
 		t.Fatalf("unexpected generated counts: %#v", created)
 	}
 
@@ -238,23 +238,23 @@ func TestGenerateAndResetDemoData(t *testing.T) {
 			t.Fatalf("count for %q = %d, want %d", query, got, want)
 		}
 	}
-	assertCount(`SELECT COUNT(*) FROM contacts WHERE id GLOB 'demo_*'`, 6)
-	assertCount(`SELECT COUNT(*) FROM events WHERE id GLOB 'demo_*'`, 10)
-	assertCount(`SELECT COUNT(*) FROM message_outbox WHERE id GLOB 'demo_*' AND status='sent'`, 3)
+	assertCount(`SELECT COUNT(*) FROM contacts WHERE id GLOB 'demo_*'`, 300)
+	assertCount(`SELECT COUNT(*) FROM events WHERE id GLOB 'demo_*'`, 461)
+	assertCount(`SELECT COUNT(*) FROM message_outbox WHERE id GLOB 'demo_*' AND status='sent'`, 121)
 
 	thai, err := service.PreviewSegment(ctx, PreviewSegmentInput{DatabaseID: DefaultDatabaseID, SegmentID: "demo_segment_thailand"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if thai.Count != 4 {
-		t.Fatalf("Thailand demo segment count = %d, want 4", thai.Count)
+	if thai.Count != 150 {
+		t.Fatalf("Thailand demo segment count = %d, want 150", thai.Count)
 	}
 	highValue, err := service.PreviewSegment(ctx, PreviewSegmentInput{DatabaseID: DefaultDatabaseID, SegmentID: "demo_segment_high_value"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if highValue.Count != 3 {
-		t.Fatalf("high-value demo segment count = %d, want 3", highValue.Count)
+	if highValue.Count != 212 {
+		t.Fatalf("high-value demo segment count = %d, want 212", highValue.Count)
 	}
 
 	generatedAgain, err := service.GenerateDemoData(ctx, DefaultDatabaseID)
@@ -262,10 +262,10 @@ func TestGenerateAndResetDemoData(t *testing.T) {
 		t.Fatal(err)
 	}
 	replaced := generatedAgain["replaced_existing"].(map[string]int64)
-	if replaced["contacts"] != 6 {
-		t.Fatalf("second generation did not replace six contacts: %#v", replaced)
+	if replaced["contacts"] != 300 {
+		t.Fatalf("second generation did not replace 300 contacts: %#v", replaced)
 	}
-	assertCount(`SELECT COUNT(*) FROM contacts WHERE id GLOB 'demo_*'`, 6)
+	assertCount(`SELECT COUNT(*) FROM contacts WHERE id GLOB 'demo_*'`, 300)
 
 	reset, err := service.ResetDemoData(ctx, DefaultDatabaseID)
 	if err != nil {
@@ -299,7 +299,7 @@ func TestCollectionListsArePaginated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if contacts.Total != 6 || contacts.TotalPages != 3 || contacts.Page != 2 || len(contacts.Rows) != 2 {
+	if contacts.Total != 300 || contacts.TotalPages != 150 || contacts.Page != 2 || len(contacts.Rows) != 2 {
 		t.Fatalf("unexpected contacts page: %#v", contacts)
 	}
 	if _, ok := contacts.Rows[0]["attributes"].(map[string]any); !ok {
@@ -323,7 +323,7 @@ func TestCollectionListsArePaginated(t *testing.T) {
 		t.Fatalf("unexpected journeys page: %#v, %v", journeys, err)
 	}
 	outbox, err := service.ListOutbox(ctx, OutboxListInput{DatabaseID: DefaultDatabaseID, Status: "sent", PageSize: 2})
-	if err != nil || outbox.Total != 3 || len(outbox.Rows) != 2 || outbox.TotalPages != 2 {
+	if err != nil || outbox.Total != 121 || len(outbox.Rows) != 2 || outbox.TotalPages != 61 {
 		t.Fatalf("unexpected outbox page: %#v, %v", outbox, err)
 	}
 }
