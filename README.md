@@ -87,7 +87,7 @@ If `--data-dir` is omitted, managed customer databases are stored next to the de
 | Area | Tools |
 | --- | --- |
 | System | `get_code_version` |
-| Databases | `create_customer_database`, `list_customer_databases`, `gen_demo_data`, `reset_demo_data` |
+| Databases | `create_customer_database`, `list_customer_databases`, `gen_demo_data`, `reset_demo_data`, `create_hotel_sample_data` |
 | Data dictionary | `get_data_dictionary`, `define_contact_attribute`, `define_event` |
 | Contacts and events | `upsert_contact`, `get_contact`, `list_contacts`, `search_contacts`, `track_event` |
 | Segments | `create_segment`, `list_segments`, `preview_segment`, `preview_segments_across_databases` |
@@ -103,6 +103,38 @@ Collection tools return structured data and are bound to a shared MCP Apps table
 Contact attributes and event parameters must be defined before data is ingested. Supported data types are `string`, `integer`, `number`, `boolean`, `date`, `datetime`, `enum`, `object`, and `array`.
 
 `gen_demo_data` creates a deterministic sample dataset in the selected database, including 300 varied contacts, behavioral events, segments, templates, a completed campaign, and a draft journey. It first replaces any prior generated demo dataset, so repeated calls do not create duplicates. `reset_demo_data` deletes records in the reserved `demo_` ID/key namespace and leaves non-demo data intact. Both tools return per-table counts.
+
+### Hotel sample data through MCP
+
+Create an empty hotel database with `create_customer_database`:
+
+```json
+{"name":"CenterBKK Hotel"}
+```
+
+Then call **`create_hotel_sample_data`** using the returned database ID:
+
+```json
+{"database_id":"<returned database ID>","as_of":"2026-11-03T18:00:00+07:00"}
+```
+
+`as_of` is optional and defaults to the current time. The tool atomically adds the dictionary, 80 synthetic Center BKK Hotel guest contacts, 80 `check_in`, 20 `check_out`, and 47 `restaurant_order` events. Of the 80 guests, 60 are in-house and 20 have checked out. No messages are sent or marketing consent granted. Existing contacts, events, dictionary definitions, or segments cause an error; repeated calls never overwrite existing data.
+
+The response includes three validated SQL segments and ready-to-call `search_contacts` arguments:
+
+| Attribute key | Audience | Count |
+| --- | --- | --- |
+| `first_night` | Checked in on the snapshot date in Asia/Bangkok and still in-house | 20 |
+| `no_restaurant` | Still in-house without a restaurant order for this stay | 25 |
+| `recent_checkout` | Checked out in (snapshot minus 24 hours, snapshot] | 15 |
+
+To display one audience as the CDP table, call `search_contacts`:
+
+```json
+{"database_id":"<returned database ID>","attribute_key":"no_restaurant","value":true,"page":1,"page_size":100}
+```
+
+Use `first_night` or `recent_checkout` for the other lists, and `list_contacts` for all 80 guests. Restaurant usage is correlated by `stay_id`. Both audience flags and SQL segment parameters are frozen at `as_of`; they do not update as time passes. Use a new empty database for a new snapshot.
 
 ### SQLite administration
 

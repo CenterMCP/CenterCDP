@@ -3,6 +3,9 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"github.com/rvarun11/sqlite-mcp/internal/cdp"
+	"github.com/rvarun11/sqlite-mcp/internal/logger"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,7 +19,7 @@ func TestRegisterCDPTools(t *testing.T) {
 	RegisterCDPTools(mcpServer, NewCDPHandler(nil))
 	tools := mcpServer.ListTools()
 	for _, name := range []string{
-		"get_code_version", "create_customer_database", "list_customer_databases", "gen_demo_data", "reset_demo_data", "get_data_dictionary",
+		"get_code_version", "create_customer_database", "list_customer_databases", "gen_demo_data", "create_hotel_sample_data", "reset_demo_data", "get_data_dictionary",
 		"define_contact_attribute", "define_event", "upsert_contact", "get_contact", "list_contacts", "search_contacts", "track_event",
 		"create_segment", "list_segments", "preview_segment", "preview_segments_across_databases",
 		"save_message_template", "list_message_templates", "create_campaign", "list_campaigns", "launch_campaign", "create_journey", "list_journeys",
@@ -75,5 +78,36 @@ func TestGetCodeVersion(t *testing.T) {
 	}
 	if info.FeatureVersion != appversion.FeatureVersion || info.Version == "" {
 		t.Fatalf("unexpected version result: %#v", info)
+	}
+}
+
+func TestCreateHotelSampleDataTool(t *testing.T) {
+	dir := t.TempDir()
+	manager, err := cdp.NewManager(filepath.Join(dir, "registry.db"), filepath.Join(dir, "databases"), filepath.Join(dir, "default.db"), logger.NewTestLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	h := NewCDPHandler(cdp.NewService(manager, logger.NewTestLogger()))
+	database, err := manager.Create(context.Background(), "CenterBKK Hotel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := server.NewMCPServer("test", "1")
+	RegisterCDPTools(srv, h)
+	tool := srv.ListTools()["create_hotel_sample_data"]
+	var req mcp.CallToolRequest
+	req.Params.Arguments = map[string]any{"database_id": database.ID, "as_of": "2026-11-03T18:00:00+07:00"}
+	result, err := tool.Handler(context.Background(), req)
+	if err != nil || result.IsError {
+		t.Fatalf("tool failed: %v %v", result, err)
+	}
+	data := result.StructuredContent.(map[string]any)
+	if data["contacts"] != 80 {
+		t.Fatalf("unexpected result: %v", data)
+	}
+	result, err = tool.Handler(context.Background(), req)
+	if err != nil || !result.IsError {
+		t.Fatalf("duplicate seed not rejected: %v %v", result, err)
 	}
 }

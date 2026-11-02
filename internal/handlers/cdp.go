@@ -77,6 +77,14 @@ func (h *CDPHandler) GenDemoData(ctx context.Context, request mcp.CallToolReques
 	value, err := h.service.GenerateDemoData(ctx, in.DatabaseID)
 	return cdpResult(value, err)
 }
+func (h *CDPHandler) CreateHotelSampleData(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	in, err := decodeCDPInput[cdp.HotelSampleInput](request)
+	if err != nil {
+		return cdpResult(nil, err)
+	}
+	value, err := h.service.CreateHotelSampleData(ctx, in)
+	return cdpResult(value, err)
+}
 func (h *CDPHandler) ResetDemoData(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	in, err := decodeCDPInput[cdp.DatabaseScopedInput](request)
 	if err != nil {
@@ -307,6 +315,7 @@ func RegisterCDPTools(mcpServer *server.MCPServer, h *CDPHandler) {
 	register("get_code_version", "Return the running CenterCDP feature version, exact Git revision, and whether it was built with uncommitted code changes.", true, false, true, mcp.NewTool("get_code_version"), h.GetCodeVersion)
 	register("create_customer_database", "Create an isolated customer database for a business or brand.", false, false, false, mcp.NewTool("create_customer_database", mcp.WithInputSchema[cdp.DatabaseInput]()), h.CreateDatabase)
 	registerTable("list_customer_databases", "List available customer databases in a paginated table. Use database_id explicitly in every CDP operation.", mcp.NewTool("list_customer_databases", mcp.WithInputSchema[cdp.PaginationInput]()), h.ListDatabases)
+	register("create_hotel_sample_data", "Create Center BKK Hotel sample data in an empty customer database: 80 guests, check_in, check_out and restaurant_order events, and three queryable audience lists. First create a database named CenterBKK Hotel using create_customer_database and pass its database_id. Optional as_of is RFC3339, defaults to now. Audiences are frozen at as_of in Asia/Bangkok. Refuses existing contacts, events, dictionary or segments; never replaces data.", false, false, false, mcp.NewTool("create_hotel_sample_data", mcp.WithInputSchema[cdp.HotelSampleInput]()), h.CreateHotelSampleData)
 	register("gen_demo_data", "Replace the reserved demo_ namespace with a complete sample CDP dataset containing 300 varied contacts. Existing non-demo data is preserved.", false, true, true, mcp.NewTool("gen_demo_data", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.GenDemoData)
 	register("reset_demo_data", "Delete all records in the reserved demo_ namespace while preserving non-demo data.", false, true, true, mcp.NewTool("reset_demo_data", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.ResetDemoData)
 	register("get_data_dictionary", "Return contact attributes, events, and event parameters defined for a customer database.", true, false, true, mcp.NewTool("get_data_dictionary", mcp.WithInputSchema[cdp.DatabaseScopedInput]()), h.DataDictionary)
