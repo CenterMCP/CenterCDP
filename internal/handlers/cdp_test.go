@@ -19,7 +19,7 @@ func TestRegisterCDPTools(t *testing.T) {
 	RegisterCDPTools(mcpServer, NewCDPHandler(nil))
 	tools := mcpServer.ListTools()
 	for _, name := range []string{
-		"get_code_version", "create_customer_database", "list_customer_databases", "gen_demo_data", "create_hotel_sample_data", "reset_demo_data", "get_data_dictionary",
+		"get_code_version", "create_customer_database", "list_customer_databases", "gen_demo_data", "create_hotel_sample_data", "list_popular_food", "reset_demo_data", "get_data_dictionary",
 		"define_contact_attribute", "define_event", "upsert_contact", "get_contact", "list_contacts", "search_contacts", "track_event",
 		"create_segment", "list_segments", "preview_segment", "preview_segments_across_databases",
 		"save_message_template", "list_message_templates", "create_campaign", "list_campaigns", "launch_campaign", "create_journey", "list_journeys",
@@ -36,7 +36,7 @@ func TestRegisterCDPTools(t *testing.T) {
 	}
 
 	for _, name := range []string{
-		"list_customer_databases", "list_contacts", "search_contacts", "list_segments",
+		"list_customer_databases", "list_contacts", "search_contacts", "list_segments", "list_popular_food",
 		"list_message_templates", "list_campaigns", "list_journeys", "list_message_outbox",
 	} {
 		tool := tools[name].Tool
@@ -89,7 +89,7 @@ func TestCreateHotelSampleDataTool(t *testing.T) {
 	}
 	defer manager.Close()
 	h := NewCDPHandler(cdp.NewService(manager, logger.NewTestLogger()))
-	database, err := manager.Create(context.Background(), "CenterBKK Hotel")
+	database, err := manager.Create(context.Background(), "Serenity Pearl Hotel")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +105,16 @@ func TestCreateHotelSampleDataTool(t *testing.T) {
 	data := result.StructuredContent.(map[string]any)
 	if data["contacts"] != 80 {
 		t.Fatalf("unexpected result: %v", data)
+	}
+	var popularReq mcp.CallToolRequest
+	popularReq.Params.Arguments = map[string]any{"database_id": database.ID, "page_size": 100}
+	popular, err := srv.ListTools()["list_popular_food"].Handler(context.Background(), popularReq)
+	if err != nil || popular.IsError {
+		t.Fatalf("popular food tool failed: %v %v", popular, err)
+	}
+	view := popular.StructuredContent.(tableView)
+	if view.View != "table" || len(view.Rows.([]map[string]any)) != 10 {
+		t.Fatalf("unexpected popular food table: %+v", view)
 	}
 	result, err = tool.Handler(context.Background(), req)
 	if err != nil || !result.IsError {

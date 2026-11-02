@@ -90,6 +90,7 @@ If `--data-dir` is omitted, managed customer databases are stored next to the de
 | Databases | `create_customer_database`, `list_customer_databases`, `gen_demo_data`, `reset_demo_data`, `create_hotel_sample_data` |
 | Data dictionary | `get_data_dictionary`, `define_contact_attribute`, `define_event` |
 | Contacts and events | `upsert_contact`, `get_contact`, `list_contacts`, `search_contacts`, `track_event` |
+| Restaurant analytics | `list_popular_food` |
 | Segments | `create_segment`, `list_segments`, `preview_segment`, `preview_segments_across_databases` |
 | Messaging | `save_message_template`, `list_message_templates`, `create_campaign`, `list_campaigns`, `launch_campaign`, `list_message_outbox` |
 | Journeys | `create_journey`, `list_journeys`, `publish_journey`, `pause_journey` |
@@ -109,7 +110,7 @@ Contact attributes and event parameters must be defined before data is ingested.
 Create an empty hotel database with `create_customer_database`:
 
 ```json
-{"name":"CenterBKK Hotel"}
+{"name":"Serenity Pearl Hotel"}
 ```
 
 Then call **`create_hotel_sample_data`** using the returned database ID:
@@ -118,7 +119,19 @@ Then call **`create_hotel_sample_data`** using the returned database ID:
 {"database_id":"<returned database ID>","as_of":"2026-11-03T18:00:00+07:00"}
 ```
 
-`as_of` is optional and defaults to the current time. The tool atomically adds the dictionary, 80 synthetic Center BKK Hotel guest contacts, 80 `check_in`, 20 `check_out`, and 47 `restaurant_order` events. Of the 80 guests, 60 are in-house and 20 have checked out. No messages are sent or marketing consent granted. Existing contacts, events, dictionary definitions, or segments cause an error; repeated calls never overwrite existing data.
+`as_of` is optional and defaults to the current time. The tool atomically adds the dictionary, 80 synthetic Serenity Pearl Hotel guest contacts, 80 `check_in`, 20 `check_out`, and 47 `restaurant_order` events. Of the 80 guests, 60 are in-house and 20 have checked out. No messages are sent or marketing consent granted. Existing contacts, events, dictionary definitions, or segments cause an error; repeated calls never overwrite existing data.
+
+Guests have repeatable fictional Thai and international full names, such as `Nattapong Srisawat` and `Emily Wilson`, and unique name-based emails on reserved `example.com`, `example.net`, and `example.org` domains. The email is stored in both the contact attributes and email identity. No external fake-data library or network access is needed.
+
+Restaurant orders are itemized receipts from **Pearl Kitchen**, including `restaurant_name`, `table_number`, `meal_period`, `currency`, `status`, `items`, `subtotal`, `service_charge`, `tax`, and `amount`. Each item has a stable `dish_id`, English `dish_name`, Thai `dish_name_th`, `category`, `quantity`, `unit_price`, and `line_total`. The 10-dish menu includes Pad Thai with Prawns, Tom Yum Goong, Green Curry with Chicken, and Mango Sticky Rice. Orders include a 10% service charge and 7% VAT on the subtotal plus service charge. Repeated dishes and varied quantities make popularity queries meaningful.
+
+Call **`list_popular_food`** for the selected customer database:
+
+```json
+{"database_id":"<returned database ID>","page":1,"page_size":100}
+```
+
+The MCP table ranks dishes by `quantity_sold`, then `order_count`, and reports `item_revenue` before service charges and VAT. Only completed itemized orders are counted. Currencies are grouped separately. This works on managed customer databases; the raw SQLite `query` tool still targets only the default database. Existing previously generated hotel datasets are not automatically renamed or regenerated; create a new empty **Serenity Pearl Hotel** database and run `create_hotel_sample_data` to get these fixtures.
 
 The response includes three validated SQL segments and ready-to-call `search_contacts` arguments:
 

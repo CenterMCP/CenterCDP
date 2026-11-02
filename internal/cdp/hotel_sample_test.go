@@ -10,7 +10,7 @@ func TestHotelSampleData(t *testing.T) {
 		t.Run(asOf, func(t *testing.T) {
 			s, m := setupService(t)
 			ctx := context.Background()
-			database, err := m.Create(ctx, "CenterBKK Hotel")
+			database, err := m.Create(ctx, "Serenity Pearl Hotel")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -73,7 +73,7 @@ func TestHotelSampleData(t *testing.T) {
 			}
 			// A restaurant order on a previous stay must not affect this stay's audience.
 			_, err = db.Exec(`INSERT INTO events(id,contact_id,event_key,definition_version,occurred_at,properties_json,created_at)
- SELECT 'previous-stay-order',id,'restaurant_order',1,'2026-01-01T12:00:00Z','{"stay_id":"previous-stay"}','2026-01-01T12:00:00Z' FROM contacts WHERE json_extract(attributes_json,'$.stay_id')='BKK-STAY-001'`)
+ SELECT 'previous-stay-order',id,'restaurant_order',1,'2026-01-01T12:00:00Z','{"stay_id":"previous-stay"}','2026-01-01T12:00:00Z' FROM contacts WHERE json_extract(attributes_json,'$.stay_id')='SPH-STAY-001'`)
 			if err != nil {
 				t.Fatal(err)
 			}
