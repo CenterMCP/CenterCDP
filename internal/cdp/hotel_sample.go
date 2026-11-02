@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -46,6 +47,18 @@ func (s *Service) CreateHotelSampleData(ctx context.Context, in HotelSampleInput
 		}
 	}
 	timestamp := asOf.Format(time.RFC3339)
+	// Resolve the explicit customer database in the registry before opening it.
+	// The default database is never a valid destination, even if renamed.
+	var databaseName, databaseStatus string
+	if err = s.manager.registry.QueryRowContext(ctx, `SELECT name,status FROM customer_databases WHERE id=?`, in.DatabaseID).Scan(&databaseName, &databaseStatus); err != nil {
+		return nil, fmt.Errorf("resolve hotel customer database %q: %w", in.DatabaseID, err)
+	}
+	if in.DatabaseID == DefaultDatabaseID || !strings.EqualFold(strings.TrimSpace(databaseName), sampleHotelName) {
+		return nil, fmt.Errorf("hotel sample must be stored in the Serenity Pearl Hotel customer database; create_customer_database with name %q and pass its returned database_id", sampleHotelName)
+	}
+	if databaseStatus != "active" {
+		return nil, fmt.Errorf("customer database %q is not active", in.DatabaseID)
+	}
 	db, err := s.manager.Get(ctx, in.DatabaseID)
 	if err != nil {
 		return nil, err
@@ -157,7 +170,7 @@ func (s *Service) CreateHotelSampleData(ctx context.Context, in HotelSampleInput
 			}
 		}
 	}
-	result := map[string]any{"database_id": in.DatabaseID, "hotel_name": sampleHotelName, "as_of": timestamp, "timezone": "Asia/Bangkok", "contacts": 80, "in_house": 60, "events": map[string]int{"check_in": 80, "check_out": 20, "restaurant_order": 47}, "snapshot_notice": "Audience flags and segments are frozen at as_of; they do not advance with the clock."}
+	result := map[string]any{"database_id": in.DatabaseID, "database_name": databaseName, "hotel_name": sampleHotelName, "as_of": timestamp, "timezone": "Asia/Bangkok", "contacts": 80, "in_house": 60, "events": map[string]int{"check_in": 80, "check_out": 20, "restaurant_order": 47}, "snapshot_notice": "Audience flags and segments are frozen at as_of; they do not advance with the clock."}
 	lists := map[string]any{}
 	for _, a := range hotelAudiences {
 		query := hotelStaySQL + " SELECT DISTINCT contact_id AS contact_id FROM stays WHERE " + a.condition + " ORDER BY contact_id"

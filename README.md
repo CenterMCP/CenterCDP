@@ -113,7 +113,7 @@ Create an empty hotel database with `create_customer_database`:
 {"name":"Serenity Pearl Hotel"}
 ```
 
-Then call **`create_hotel_sample_data`** using the returned database ID:
+Then call **`create_hotel_sample_data`** using the returned database ID. The destination must be the **Serenity Pearl Hotel** customer database (case-insensitive); `default` and other business databases are rejected before any sample records are written. The response includes `database_id` and `database_name` to confirm the destination:
 
 ```json
 {"database_id":"<returned database ID>","as_of":"2026-11-03T18:00:00+07:00"}

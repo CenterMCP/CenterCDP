@@ -2,6 +2,7 @@ package cdp
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -97,7 +98,11 @@ func TestHotelSampleData(t *testing.T) {
 func TestHotelSampleRollback(t *testing.T) {
 	s, m := setupService(t)
 	ctx := context.Background()
-	db, err := m.Get(ctx, "default")
+	database, err := m.Create(ctx, sampleHotelName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := m.Get(ctx, database.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,8 +111,10 @@ func TestHotelSampleRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.CreateHotelSampleData(ctx, HotelSampleInput{DatabaseID: "default"}); err == nil {
+	if _, err = s.CreateHotelSampleData(ctx, HotelSampleInput{DatabaseID: database.ID}); err == nil {
 		t.Fatal("expected forced failure")
+	} else if !strings.Contains(err.Error(), "forced failure") {
+		t.Fatalf("did not reach forced rollback: %v", err)
 	}
 	for _, table := range []string{"contacts", "contact_identities", "events", "contact_attribute_definitions", "event_definitions", "event_parameter_definitions", "segments"} {
 		var count int
@@ -118,10 +125,51 @@ func TestHotelSampleRollback(t *testing.T) {
 			t.Fatalf("partial data in %s: %d", table, count)
 		}
 	}
-	if _, err = s.CreateHotelSampleData(ctx, HotelSampleInput{DatabaseID: "default", AsOf: "bad date"}); err == nil {
+	if _, err = s.CreateHotelSampleData(ctx, HotelSampleInput{DatabaseID: database.ID, AsOf: "bad date"}); err == nil {
 		t.Fatal("invalid timestamp accepted")
 	}
 	if _, err = s.CreateHotelSampleData(ctx, HotelSampleInput{DatabaseID: "missing"}); err == nil {
 		t.Fatal("unknown database accepted")
+	}
+}
+
+func TestHotelSampleRequiresNamedCustomerDatabase(t *testing.T) {
+	ctx := context.Background()
+	for _, name := range []string{"default", "Another Hotel", "CenterBKK Hotel", "serenity pearl hotel"} {
+		t.Run(name, func(t *testing.T) {
+			s, m := setupService(t)
+			id := DefaultDatabaseID
+			if name != "default" {
+				database, err := m.Create(ctx, name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				id = database.ID
+			}
+			result, err := s.CreateHotelSampleData(ctx, HotelSampleInput{DatabaseID: id})
+			if name == "serenity pearl hotel" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if result["database_id"] != id || result["database_name"] != name {
+					t.Fatal(result)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "Serenity Pearl Hotel customer database") {
+				t.Fatalf("incorrect database accepted: %v %v", result, err)
+			}
+			db, err := m.Get(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var total int
+			if err = db.QueryRow(`SELECT (SELECT count(*) FROM contacts)+(SELECT count(*) FROM events)+(SELECT count(*) FROM contact_attribute_definitions)+(SELECT count(*) FROM event_definitions)+(SELECT count(*) FROM segments)`).Scan(&total); err != nil {
+				t.Fatal(err)
+			}
+			if total != 0 {
+				t.Fatalf("rejected database was modified: %d", total)
+			}
+		})
 	}
 }
